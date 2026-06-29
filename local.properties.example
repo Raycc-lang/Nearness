@@ -1,0 +1,10 @@
+# Copy this file to local.properties and fill in your own values.
+# local.properties is git-ignored and must never be committed.
+
+# Android SDK location (Android Studio sets this automatically)
+sdk.dir=/path/to/Android/Sdk
+
+# Supabase API endpoint for the Android app.
+# Use the Cloudflare Worker proxy URL, not the direct Supabase URL.
+SUPABASE_URL=https://nearness-supabase-proxy.your-subdomain.workers.dev
+SUPABASE_ANON_KEY=your_anon_key

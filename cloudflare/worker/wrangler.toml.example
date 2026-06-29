@@ -1,0 +1,8 @@
+name = "nearness-supabase-proxy"
+main = "index.ts"
+compatibility_date = "2026-06-29"
+
+# Set this to the real Supabase project URL, then deploy the Worker.
+# Do not put service-role keys or Firebase credentials in this Worker.
+[vars]
+SUPABASE_URL = "https://yourproject.supabase.co"

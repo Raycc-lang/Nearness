@@ -1,0 +1,37 @@
+# Secrets — never commit
+local.properties
+app/google-services.json
+supabase/.env
+.env
+
+# Gradle
+.gradle/
+build/
+captures/
+.cxx/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties.bak
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+
+# Node (Edge Functions tooling, if used)
+node_modules/

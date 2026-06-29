@@ -1,0 +1,9 @@
+# Minimal Supabase CLI config. Run `supabase link` to connect this to your
+# project, then `supabase db push` and `supabase functions deploy`.
+project_id = "nearness"
+
+[functions.send-notification]
+verify_jwt = false
+
+[functions.auto-archive]
+verify_jwt = false

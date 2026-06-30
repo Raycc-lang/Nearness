@@ -1,7 +1,13 @@
 // Nearness — auto-archive Edge Function
 //
-// Archives (does NOT delete) whiteboard items older than 5 days by setting
-// archived_at. Intended to run nightly at 03:00 UTC.
+// Archives (does NOT delete) whiteboard posts older than 5 days. Top-level
+// posts older than 5 days are archived and the archive cascades to their
+// replies (a reply never outlives its parent). Intended to run nightly at
+// 03:00 UTC.
+//
+// The archiving logic lives in the SQL function
+// public.archive_old_whiteboard_items() (see schema.sql) so it stays in sync
+// with the equivalent cron.sql job.
 //
 // Two ways to schedule:
 //   1. Supabase Cron invoking this function over HTTP, or
@@ -19,21 +25,14 @@ const supabase = createClient(
 );
 
 Deno.serve(async () => {
-  const cutoff = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-
-  const { data, error } = await supabase
-    .from("whiteboard_items")
-    .update({ archived_at: new Date().toISOString() })
-    .is("archived_at", null)
-    .lt("created_at", cutoff)
-    .select("id");
+  const { data, error } = await supabase.rpc("archive_old_whiteboard_items");
 
   if (error) {
     console.error(error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 
-  return new Response(JSON.stringify({ archived: data?.length ?? 0 }), {
+  return new Response(JSON.stringify({ archived: data ?? 0 }), {
     headers: { "Content-Type": "application/json" },
   });
 });

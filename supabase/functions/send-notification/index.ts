@@ -3,9 +3,11 @@
 // Triggered by Database Webhooks:
 //   - INSERT on `signals`           → HIGH importance "signals" channel
 //   - INSERT on `whiteboard_items`  → DEFAULT importance "whiteboard" channel
+//                                     (top-level posts AND replies)
 //   - UPDATE on `status`            → LOW importance "status" channel
 //
-// It looks up the receiver's FCM token and sends via the FCM HTTP v1 API.
+// It resolves the recipient (the partner, via the partnerships table) and
+// their FCM token, then sends via the FCM HTTP v1 API.
 //
 // Required secrets (Supabase Dashboard → Edge Functions → Secrets):
 //   SUPABASE_URL
@@ -27,18 +29,21 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// Body text for preset signals, phrased as a gesture from the sender
+// (e.g. "[Name]" as title + "sent you a hug 🫂" as body).
 const SIGNAL_LABELS: Record<string, string> = {
-  thinking_of_you: "🤍 Thinking of you",
-  good_morning: "☀️ Good morning",
-  good_night: "🌙 Good night",
-  miss_you: "👀 Miss you",
+  hug: "sent you a hug 🫂",
+  kiss: "sent you a kiss 💋",
+  good_morning: "says good morning ☀️",
+  good_night: "says good night 🌙",
+  thinking_of_you: "is thinking of you 💭",
 };
 
 const ACTIVITY_LABELS: Record<string, string> = {
-  resting: "Resting",
-  working: "Working",
-  free: "Free",
-  out: "Out",
+  resting: "🌙 Resting",
+  working: "💼 Working",
+  free: "🌿 Free",
+  out: "🚶 Out",
 };
 
 async function getAccessToken(): Promise<string> {
@@ -119,13 +124,36 @@ async function nameOf(userId: string): Promise<string> {
   return data?.display_name ?? "Your partner";
 }
 
-async function tokenAndPartner(userId: string): Promise<{ token: string | null; partner: string | null }> {
+async function tokenOf(userId: string): Promise<string | null> {
   const { data } = await supabase
     .from("profiles")
-    .select("partner_id, fcm_token")
+    .select("fcm_token")
     .eq("id", userId)
     .single();
-  return { token: data?.fcm_token ?? null, partner: data?.partner_id ?? null };
+  return data?.fcm_token ?? null;
+}
+
+// The completed partnership a user belongs to (user_b_id non-null).
+async function partnerOf(userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("partnerships")
+    .select("user_a_id, user_b_id")
+    .not("user_b_id", "is", null)
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+    .maybeSingle();
+  if (!data) return null;
+  return data.user_a_id === userId ? (data.user_b_id as string) : (data.user_a_id as string);
+}
+
+// The member of a partnership who is not the given user.
+async function otherMember(partnershipId: string, userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("partnerships")
+    .select("user_a_id, user_b_id")
+    .eq("id", partnershipId)
+    .single();
+  if (!data || !data.user_b_id) return null;
+  return data.user_a_id === userId ? (data.user_b_id as string) : (data.user_a_id as string);
 }
 
 Deno.serve(async (req) => {
@@ -135,7 +163,7 @@ Deno.serve(async (req) => {
 
     if (table === "signals" && type === "INSERT") {
       const receiver = record.receiver_id as string;
-      const { token } = await tokenAndPartner(receiver);
+      const token = await tokenOf(receiver);
       if (!token) return new Response("no token", { status: 200 });
       const name = await nameOf(record.sender_id as string);
       const text = record.type === "custom"
@@ -143,25 +171,26 @@ Deno.serve(async (req) => {
         : (SIGNAL_LABELS[record.type as string] ?? "sent you a signal");
       await sendFcm(token, name, text, "signals");
     } else if (table === "whiteboard_items" && type === "INSERT") {
-      // Notify the *other* member of the pair, not the author.
+      // Notify the *other* member of the partnership, not the author.
       const author = record.author_id as string;
-      const { partner } = await tokenAndPartner(author);
-      if (!partner) return new Response("no partner", { status: 200 });
-      const { token } = await tokenAndPartner(partner);
+      const recipient = await otherMember(record.partnership_id as string, author);
+      if (!recipient) return new Response("no partner", { status: 200 });
+      const token = await tokenOf(recipient);
       if (!token) return new Response("no token", { status: 200 });
       const name = await nameOf(author);
-      const hint = record.type === "photo" ? "a photo"
-        : record.type === "voice" ? "a voice memo" : "a note";
-      await sendFcm(token, `${name} left something for you`, hint, "whiteboard");
+      const body = record.parent_id
+        ? "replied to a post"
+        : "added something to the whiteboard";
+      await sendFcm(token, name, body, "whiteboard");
     } else if (table === "status" && type === "UPDATE") {
       const owner = record.user_id as string;
-      const { partner } = await tokenAndPartner(owner);
+      const partner = await partnerOf(owner);
       if (!partner) return new Response("no partner", { status: 200 });
-      const { token } = await tokenAndPartner(partner);
+      const token = await tokenOf(partner);
       if (!token) return new Response("no token", { status: 200 });
       const name = await nameOf(owner);
       const label = ACTIVITY_LABELS[record.activity as string] ?? "their status";
-      await sendFcm(token, `${name} updated their status`, label, "status");
+      await sendFcm(token, name, `is now ${label}`, "status");
     }
 
     return new Response("ok", { status: 200 });

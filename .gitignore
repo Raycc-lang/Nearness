@@ -35,3 +35,7 @@ supabase/.branches/
 
 # Node (Edge Functions tooling, if used)
 node_modules/
+.kotlin/
+.wrangler/
+package-lock.json
+skills-lock.json

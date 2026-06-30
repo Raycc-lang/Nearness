@@ -16,11 +16,11 @@ val localProps = Properties().apply {
 fun secret(key: String): String = localProps.getProperty(key) ?: ""
 
 android {
-    namespace = "com.yourname.nearness"
+    namespace = "com.raycc.nearness"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.yourname.nearness"
+        applicationId = "com.raycc.nearness"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

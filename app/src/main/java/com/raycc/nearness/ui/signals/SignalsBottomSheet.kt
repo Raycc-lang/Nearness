@@ -51,6 +51,10 @@ fun SignalSheet(
     LaunchedEffect(uiState.sentLabel) {
         if (uiState.sentLabel != null) {
             onDismiss()
+            // Clear so the next time the sheet opens, the stale sentLabel
+            // doesn't immediately trigger another dismissal (looked like the
+            // button "didn't respond" / the sheet "flickered").
+            viewModel.clearSent()
         }
     }
 

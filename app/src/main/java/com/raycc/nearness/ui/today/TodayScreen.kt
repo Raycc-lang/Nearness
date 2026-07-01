@@ -282,10 +282,11 @@ fun TodayScreen(
 
 @Composable
 private fun SignalBanner(signal: Signal, partnerName: String) {
+    val displayName = formatDisplayName(partnerName)
     val message = if (signal.type == SignalType.CUSTOM) {
-        "$partnerName: ${signal.customText}"
+        "$displayName: ${signal.customText}"
     } else {
-        "$partnerName sent you a ${signal.type.label} ${signal.type.emoji}"
+        "$displayName sent you a ${signal.type.label} ${signal.type.emoji}"
     }
 
     Surface(
@@ -350,30 +351,32 @@ private fun PartnerCard(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Avatar(url = avatarUrl, name = name, size = 56.dp)
-                Spacer(modifier = Modifier.width(16.dp))
+                Avatar(url = avatarUrl, name = name, size = 60.dp)
+                Spacer(modifier = Modifier.width(20.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = name,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = formatDisplayName(name),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(
                             onClick = onSendSignalClick,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Favorite,
                                 contentDescription = "Send Signal",
                                 tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = status?.let { "${it.activity.emoji} ${it.activity.label}" } ?: "Offline",
                         style = MaterialTheme.typography.headlineSmall,
@@ -475,7 +478,7 @@ private fun YourCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = name,
+                            text = formatDisplayName(name),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
@@ -1279,3 +1282,14 @@ data class ShiftTemplate(
     val endHour: Int,
     val endMinute: Int
 )
+
+/**
+ * Display name with the first letter auto-capitalized.
+ * Only applies to Latin letters; CJK and other scripts are left as-is
+ * (uppercasing a CJK char is a no-op anyway, but we skip explicitly).
+ */
+private fun formatDisplayName(name: String): String {
+    if (name.isEmpty()) return name
+    val first = name.first()
+    return if (first in 'a'..'z') name.replaceFirstChar { it.uppercaseChar() } else name
+}

@@ -110,6 +110,7 @@ async function sendFcm(token: string, title: string, body: string, channelId: st
         token,
         notification: { title, body },
         android: { notification: { channel_id: channelId } },
+        data: { channel_id: channelId },
       },
     }),
   });

@@ -11,7 +11,11 @@ class NearnessFcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val notification = message.notification ?: return
-        val channelId = notification.channelId ?: NotificationHelper.CHANNEL_STATUS
+        // Prefer channel_id from data payload (set by Edge Function), fall back to
+        // notification.channelId which may be null on some FCM SDK versions.
+        val channelId = message.data["channel_id"]
+            ?: notification.channelId
+            ?: NotificationHelper.CHANNEL_STATUS
         NotificationHelper.show(
             context = this,
             channelId = channelId,

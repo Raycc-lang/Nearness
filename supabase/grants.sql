@@ -11,7 +11,7 @@ grant select, insert, update, delete
          public.partnerships,
          public.whiteboard_items,
          public.signals
-    to authenticated, anon;
+    to authenticated, anon, service_role;
 
 grant execute on function
     public.create_pending_partnership(),
@@ -19,7 +19,7 @@ grant execute on function
     public.my_partner_id(),
     public.is_partnership_member(uuid),
     public.is_self_or_partner(uuid)
-    to authenticated, anon;
+    to authenticated, anon, service_role;
 
 -- archive_old_whiteboard_items() is SECURITY DEFINER and must NOT be callable by
 -- app clients (it would let any user archive the pair's feed). Only the

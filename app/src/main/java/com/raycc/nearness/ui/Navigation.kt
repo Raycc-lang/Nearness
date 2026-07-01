@@ -1,16 +1,21 @@
 package com.raycc.nearness.ui
 
-/** Type-safe route constants for Navigation Compose. */
-object Routes {
-    const val AUTH = "auth"
-    const val PAIRING = "pairing"
-    const val MAIN = "main"
+import kotlinx.serialization.Serializable
 
-    // Bottom-nav tabs (nested under MAIN)
-    const val TODAY = "today"
-    const val WHITEBOARD = "whiteboard"
-    const val SIGNALS = "signals"
+@Serializable
+sealed interface Screen {
+    @Serializable
+    data object Auth : Screen
 
-    // Pushed screens
-    const val ARCHIVE = "archive"
+    @Serializable
+    data object Pairing : Screen
+
+    @Serializable
+    data object Home : Screen
+
+    @Serializable
+    data object Whiteboard : Screen
+
+    @Serializable
+    data object Archive : Screen
 }

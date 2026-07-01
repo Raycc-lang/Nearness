@@ -14,11 +14,13 @@ private const val BUCKET = "whiteboard-media"
 
 @Serializable
 private data class WhiteboardInsert(
-    @SerialName("partner_pair_key") val pairKey: String,
+    @SerialName("partnership_id") val partnershipId: String,
     @SerialName("author_id") val authorId: String,
+    @SerialName("parent_id") val parentId: String? = null,
     val type: String,
-    val content: String?,
-    val caption: String?,
+    @SerialName("text_body") val textBody: String? = null,
+    @SerialName("storage_path") val storagePath: String? = null,
+    val caption: String? = null,
 )
 
 @Serializable
@@ -27,12 +29,12 @@ private data class ArchivePatch(@SerialName("archived_at") val archivedAt: Strin
 /** Only layer that calls Supabase / Storage for whiteboard data. */
 class WhiteboardRepository {
 
-    /** Active (non-archived) feed for a pair, newest first. */
-    suspend fun getActiveFeed(pairKey: String): Result<List<WhiteboardItem>> = runCatching {
+    /** Active (non-archived) feed for a partnership, newest first. */
+    suspend fun getActiveFeed(partnershipId: String): Result<List<WhiteboardItem>> = runCatching {
         supabase.from("whiteboard_items")
             .select {
                 filter {
-                    eq("partner_pair_key", pairKey)
+                    eq("partnership_id", partnershipId)
                     exact("archived_at", null)
                 }
                 order("created_at", Order.DESCENDING)
@@ -41,13 +43,17 @@ class WhiteboardRepository {
             .map { it.toDomain() }
     }
 
-    /** All archived items for a pair, newest first (grouped by month in UI). */
-    suspend fun getArchive(pairKey: String): Result<List<WhiteboardItem>> = runCatching {
+    /** All archived items for a partnership, newest first. */
+    suspend fun getArchive(partnershipId: String): Result<List<WhiteboardItem>> = runCatching {
         supabase.from("whiteboard_items")
             .select {
                 filter {
-                    eq("partner_pair_key", pairKey)
-                    filterNot("archived_at", io.github.jan.supabase.postgrest.query.filter.FilterOperator.IS, null)
+                    eq("partnership_id", partnershipId)
+                    filterNot(
+                        "archived_at",
+                        io.github.jan.supabase.postgrest.query.filter.FilterOperator.IS,
+                        null,
+                    )
                 }
                 order("created_at", Order.DESCENDING)
             }
@@ -55,31 +61,50 @@ class WhiteboardRepository {
             .map { it.toDomain() }
     }
 
-    suspend fun postText(pairKey: String, authorId: String, text: String): Result<Unit> =
-        runCatching {
-            supabase.from("whiteboard_items").insert(
-                WhiteboardInsert(pairKey, authorId, "text", text, null),
-            )
-        }
+    /** Posts a text item. [parentId] non-null makes it a reply to that top-level post. */
+    suspend fun postText(
+        partnershipId: String,
+        authorId: String,
+        text: String,
+        parentId: String? = null,
+    ): Result<Unit> = runCatching {
+        supabase.from("whiteboard_items").insert(
+            WhiteboardInsert(
+                partnershipId = partnershipId,
+                authorId = authorId,
+                parentId = parentId,
+                type = "text",
+                textBody = text,
+            ),
+        )
+    }
 
     /**
      * Uploads media bytes to the private bucket, then creates the feed row.
-     * Path convention (AGENTS.md): {pair_key}/{item_id}/{file}.
-     * We pre-generate the item id so the path is unique and deletable.
+     * Path convention: {partnership_id}/{item_id}/{file}. Pre-generate the item
+     * id so the path is unique and deletable. [parentId] non-null makes it a reply.
      */
     suspend fun postMedia(
-        pairKey: String,
+        partnershipId: String,
         authorId: String,
         type: String, // "photo" or "voice"
         itemId: String,
         fileName: String,
         bytes: ByteArray,
         caption: String?,
+        parentId: String? = null,
     ): Result<Unit> = runCatching {
-        val path = "$pairKey/$itemId/$fileName"
+        val path = "$partnershipId/$itemId/$fileName"
         supabase.storage.from(BUCKET).upload(path, bytes, upsert = false)
         supabase.from("whiteboard_items").insert(
-            WhiteboardInsert(pairKey, authorId, type, path, caption),
+            WhiteboardInsert(
+                partnershipId = partnershipId,
+                authorId = authorId,
+                parentId = parentId,
+                type = type,
+                storagePath = path,
+                caption = caption,
+            ),
         )
     }
 

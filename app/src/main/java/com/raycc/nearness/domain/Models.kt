@@ -25,19 +25,36 @@ enum class ActivityType(val emoji: String, val label: String) {
 enum class WhiteboardItemType { TEXT, PHOTO, VOICE }
 
 enum class SignalType(val emoji: String, val label: String) {
-    THINKING_OF_YOU("🤍", "Thinking of you"),
+    HUG("🫂", "Hug"),
+    KISS("💋", "Kiss"),
     GOOD_MORNING("☀️", "Good morning"),
     GOOD_NIGHT("🌙", "Good night"),
-    MISS_YOU("👀", "Miss you"),
+    THINKING_OF_YOU("💭", "Just thinking of you"),
     CUSTOM("", "Custom");
 }
 
 data class Profile(
     val id: String,
     val displayName: String?,
-    val partnerId: String?,
-    val pairingCode: String?,
+    val avatarPath: String?,
 )
+
+/** Canonical pair relationship. Pending while [userBId] is null. */
+data class Partnership(
+    val id: String,
+    val userAId: String,
+    val userBId: String?,
+    val pairingCode: String?,
+    val pairingCodeExpiresAt: Instant?,
+    val createdAt: Instant,
+) {
+    /** The other member of this partnership, or null if still pending. */
+    fun partnerOf(userId: String): String? = when (userId) {
+        userAId -> userBId
+        userBId -> userAId
+        else -> null
+    }
+}
 
 data class StatusData(
     val userId: String,
@@ -56,14 +73,18 @@ data class ScheduleBlock(
 
 data class WhiteboardItem(
     val id: String,
-    val pairKey: String,
+    val partnershipId: String,
     val authorId: String,
+    val parentId: String?,
     val type: WhiteboardItemType,
-    val content: String?,
+    val textBody: String?,
+    val storagePath: String?,
     val caption: String?,
     val archivedAt: Instant?,
     val createdAt: Instant,
-)
+) {
+    val isReply: Boolean get() = parentId != null
+}
 
 data class Signal(
     val id: String,
@@ -73,10 +94,3 @@ data class Signal(
     val customText: String?,
     val sentAt: Instant,
 )
-
-/**
- * Stable key identifying a pair, independent of who computes it.
- * Sort both UUIDs and join with "_".
- */
-fun pairKey(userId: String, partnerId: String): String =
-    listOf(userId, partnerId).sorted().joinToString("_")

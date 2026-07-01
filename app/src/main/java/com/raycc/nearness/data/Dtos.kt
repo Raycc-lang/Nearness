@@ -1,6 +1,7 @@
 package com.raycc.nearness.data
 
 import com.raycc.nearness.domain.ActivityType
+import com.raycc.nearness.domain.Partnership
 import com.raycc.nearness.domain.Profile
 import com.raycc.nearness.domain.ScheduleBlock
 import com.raycc.nearness.domain.Signal
@@ -21,11 +22,22 @@ import kotlinx.serialization.Serializable
 data class ProfileDto(
     val id: String,
     @SerialName("display_name") val displayName: String? = null,
-    @SerialName("partner_id") val partnerId: String? = null,
+    @SerialName("avatar_path") val avatarPath: String? = null,
     @SerialName("fcm_token") val fcmToken: String? = null,
-    @SerialName("pairing_code") val pairingCode: String? = null,
 ) {
-    fun toDomain() = Profile(id, displayName, partnerId, pairingCode)
+    fun toDomain() = Profile(id, displayName, avatarPath)
+}
+
+@Serializable
+data class PartnershipDto(
+    val id: String,
+    @SerialName("user_a_id") val userAId: String,
+    @SerialName("user_b_id") val userBId: String? = null,
+    @SerialName("pairing_code") val pairingCode: String? = null,
+    @SerialName("pairing_code_expires_at") val pairingCodeExpiresAt: Instant? = null,
+    @SerialName("created_at") val createdAt: Instant,
+) {
+    fun toDomain() = Partnership(id, userAId, userBId, pairingCode, pairingCodeExpiresAt, createdAt)
 }
 
 @Serializable
@@ -72,20 +84,24 @@ data class ScheduleBlockInsert(
 @Serializable
 data class WhiteboardItemDto(
     val id: String,
-    @SerialName("partner_pair_key") val pairKey: String,
+    @SerialName("partnership_id") val partnershipId: String,
     @SerialName("author_id") val authorId: String,
+    @SerialName("parent_id") val parentId: String? = null,
     val type: String,
-    val content: String? = null,
+    @SerialName("text_body") val textBody: String? = null,
+    @SerialName("storage_path") val storagePath: String? = null,
     val caption: String? = null,
     @SerialName("archived_at") val archivedAt: Instant? = null,
     @SerialName("created_at") val createdAt: Instant,
 ) {
     fun toDomain() = WhiteboardItem(
         id = id,
-        pairKey = pairKey,
+        partnershipId = partnershipId,
         authorId = authorId,
+        parentId = parentId,
         type = WhiteboardItemType.valueOf(type.uppercase()),
-        content = content,
+        textBody = textBody,
+        storagePath = storagePath,
         caption = caption,
         archivedAt = archivedAt,
         createdAt = createdAt,

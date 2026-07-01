@@ -6,7 +6,7 @@ import com.raycc.nearness.supabase
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.datetime.Clock
-import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 class SignalsRepository {
 
@@ -26,9 +26,9 @@ class SignalsRepository {
         )
     }
 
-    /** Most recent signal received in the last 24h, else null (ephemeral). */
+    /** Most recent signal received in the last 20 minutes, else null (ephemeral). */
     suspend fun latestRecent(userId: String): Result<Signal?> = runCatching {
-        val since = Clock.System.now().minus(24.hours)
+        val since = Clock.System.now().minus(20.minutes)
         supabase.from("signals")
             .select {
                 filter {

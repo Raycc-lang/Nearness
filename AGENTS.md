@@ -167,17 +167,28 @@ supabase.from("status").upsert(
 )
 ```
 
-### Partner pair key
+### Partnership scoping
 
-Used to scope whiteboard queries. Generate it consistently:
+Whiteboard data is scoped by `partnership_id`, a FK to the `partnerships`
+table (there is no text-based pair key). Pairing state lives entirely in
+`partnerships`; `profiles` has no `partner_id` or `pairing_code`.
+
+Resolve the caller's completed partnership (both members present) and pass
+its `id` to whiteboard queries:
 
 ```kotlin
-fun pairKey(userId: String, partnerId: String): String {
-    return listOf(userId, partnerId).sorted().joinToString("_")
-}
+// The completed partnership the current user belongs to, or null if unpaired.
+suspend fun getMyPartnership(): Result<Partnership?>
+// Partnership.partnerOf(userId) returns the other member's id.
 ```
 
-This must produce the same value regardless of which user calls it.
+Pairing is done through security-definer RPCs, never by writing `partnerships`
+rows directly from the client:
+
+```kotlin
+supabase.postgrest.rpc("create_pending_partnership").decodeAs<String>() // returns 6-char code
+supabase.postgrest.rpc("redeem_pairing_code", RedeemArgs(code))         // completes the pair
+```
 
 ---
 
@@ -202,14 +213,17 @@ Create them in `Application.onCreate()`, not lazily.
 
 ## File Storage Patterns
 
-Storage path convention:
+Storage path conventions:
 ```
-whiteboard-media/{pair_key}/{item_id}/photo.jpg
-whiteboard-media/{pair_key}/{item_id}/voice.m4a
+whiteboard-media/{partnership_id}/{item_id}/photo.jpg
+whiteboard-media/{partnership_id}/{item_id}/voice.m4a
+avatars/{user_id}.jpg
 ```
 
-Always use the item's UUID as the folder name so paths are unique and
-the item can be deleted cleanly.
+Both buckets are private; read them via signed URLs. For whiteboard media,
+always use the item's UUID as the folder name so paths are unique and the
+item can be deleted cleanly. Storage RLS keys off `partnership_id`
+membership (whiteboard-media) and the object `owner` (avatars).
 
 For voice memo caching:
 - Cache downloaded files by item ID in `context.cacheDir`
@@ -295,8 +309,10 @@ SPEC.md          Full product specification — read this first
 README.md        Public-facing documentation and self-hosting guide
 AGENTS.md        This file
 supabase/
-  schema.sql     Complete database schema
-  rls.sql        All Row Level Security policies
+  schema.sql     Tables, enums, triggers, pairing + archive functions
+  rls.sql        RLS helpers + all Row Level Security policies
+  grants.sql     Table + function privileges for authenticated/anon
+  storage.sql    Storage buckets (whiteboard-media, avatars) + policies
   cron.sql       Scheduled job (auto-archive)
   functions/
     send-notification/index.ts    FCM dispatch

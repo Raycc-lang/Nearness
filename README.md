@@ -38,16 +38,17 @@ today's blocks as a simple timeline. Helps them know when not to call
 without either of you having to say it.
 
 ### Shared Whiteboard
-A quiet feed of text notes, photos, and voice memos that both of you post to.
-No read receipts. No reply button. No delivered indicator. Items older than
-5 days are auto-archived (still findable, just out of the main view).
-The feeling: finding a post-it, not opening a chat.
+A quiet, shared space of text notes, photos, and voice memos that both of you
+build together over time. Posts support one level of replies so you can
+collaborate — but there are no read receipts, no delivered indicators, and no
+urgency. Posts older than 5 days are auto-archived (still findable, just out of
+the main view). The feeling: a shared corkboard, not a chat.
 
 ### One-Tap Signals
-Send a 🤍 or a ☀️ or a custom word. Your partner feels a gentle notification
-and sees a soft banner on their Today screen. No reply button. Ephemeral —
-disappears after 24 hours. For the times when you just want to say
-"I'm thinking of you" without starting a conversation.
+Send a 🫂 hug, a 💋 kiss, a ☀️ good morning, a 🌙 good night, a 💭, or a custom
+word — a gesture directed at your partner, sent from a button on their card.
+They feel a gentle notification and see a soft banner on their Today screen.
+No reply button. Ephemeral — disappears after 24 hours.
 
 ### No Surveillance Features
 - No real-time location
@@ -107,10 +108,11 @@ every couple runs their own private instance.
 
 Create a new Supabase project. In the SQL editor, run these files in order:
 
-1. `supabase/schema.sql` — tables, enums, triggers, pairing RPC
-2. `supabase/rls.sql` — Row Level Security policies
-3. `supabase/storage.sql` — private media bucket + policies
-4. `supabase/cron.sql` — nightly auto-archive job (needs the `pg_cron` extension)
+1. `supabase/schema.sql` — tables, enums, triggers, pairing + archive RPCs
+2. `supabase/rls.sql` — RLS helpers + Row Level Security policies
+3. `supabase/grants.sql` — table + function privileges (run after rls.sql)
+4. `supabase/storage.sql` — private buckets (whiteboard-media, avatars) + policies
+5. `supabase/cron.sql` — nightly auto-archive job (needs the `pg_cron` extension)
 
 Then deploy the Edge Functions:
 
@@ -203,14 +205,15 @@ nearness/
 │       │   │   ├── today/      Today tab (status + schedule + signal banner)
 │       │   │   ├── whiteboard/ Whiteboard tab + compose bar
 │       │   │   ├── archive/    Archive browser (pushed screen)
-│       │   │   └── signals/    Send-signal screen
+│       │   │   └── signals/    Send-signal bottom sheet
 │       │   ├── service/        FCM service, notification channels
 │       │   └── SupabaseClient.kt
 │       └── res/
 ├── supabase/
-│   ├── schema.sql              Tables, enums, triggers, pairing RPC
-│   ├── rls.sql                 Row Level Security policies
-│   ├── storage.sql             Private media bucket + policies
+│   ├── schema.sql              Tables, enums, triggers, pairing + archive RPCs
+│   ├── rls.sql                 RLS helpers + Row Level Security policies
+│   ├── grants.sql              Table + function privileges
+│   ├── storage.sql             Private buckets (whiteboard-media, avatars) + policies
 │   ├── cron.sql                Scheduled auto-archive job
 │   └── functions/
 │       ├── send-notification/  FCM dispatch Edge Function

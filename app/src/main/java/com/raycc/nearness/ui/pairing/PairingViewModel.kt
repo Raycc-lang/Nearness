@@ -25,6 +25,10 @@ class PairingViewModel(
     private val _uiState = MutableStateFlow(PairingUiState())
     val uiState: StateFlow<PairingUiState> = _uiState.asStateFlow()
 
+    init {
+        generateCode()
+    }
+
     fun generateCode() {
         _uiState.update { it.copy(isGenerating = true, error = null) }
         viewModelScope.launch {
@@ -35,7 +39,7 @@ class PairingViewModel(
     }
 
     fun onEnteredCodeChange(value: String) =
-        _uiState.update { it.copy(enteredCode = value.uppercase(), error = null) }
+        _uiState.update { it.copy(enteredCode = value.uppercase().take(6), error = null) }
 
     fun redeemCode() {
         val code = _uiState.value.enteredCode.trim()

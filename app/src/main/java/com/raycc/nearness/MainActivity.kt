@@ -12,19 +12,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.raycc.nearness.data.AuthRepository
 import com.raycc.nearness.ui.AppState
-import com.raycc.nearness.ui.MainScreen
 import com.raycc.nearness.ui.NearnessTheme
 import com.raycc.nearness.ui.RootViewModel
+import com.raycc.nearness.ui.Screen
+import com.raycc.nearness.ui.archive.ArchiveScreen
 import com.raycc.nearness.ui.auth.AuthScreen
 import com.raycc.nearness.ui.auth.AuthViewModel
 import com.raycc.nearness.ui.pairing.PairingScreen
+import com.raycc.nearness.ui.today.TodayScreen
+import com.raycc.nearness.ui.whiteboard.WhiteboardScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -38,7 +45,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             NearnessTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    NearnessApp()
+                    NearnessApp(authViewModel = authViewModel, authRepository = authRepository)
                 }
             }
         }
@@ -59,15 +66,100 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun NearnessApp(rootViewModel: RootViewModel = viewModel()) {
+private fun NearnessApp(
+    authViewModel: AuthViewModel,
+    authRepository: AuthRepository,
+    rootViewModel: RootViewModel = viewModel(),
+) {
     val state by rootViewModel.state.collectAsStateWithLifecycle()
+    val navController = rememberNavController()
+
+    LaunchedEffect(state) {
+        when (state) {
+            AppState.NeedsAuth -> {
+                navController.navigate(Screen.Auth) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+            is AppState.Ready -> {
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                if (currentRoute == null || currentRoute.contains("Auth")) {
+                    navController.navigate(Screen.Home) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
 
     when (val s = state) {
         AppState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
             CircularProgressIndicator()
         }
-        AppState.NeedsAuth -> AuthScreen()
-        AppState.NeedsPairing -> PairingScreen(onPaired = rootViewModel::onPaired)
-        is AppState.Ready -> MainScreen(userId = s.userId, partnerId = s.partnerId)
+        else -> {
+            NavHost(
+                navController = navController,
+                startDestination = if (s is AppState.NeedsAuth) Screen.Auth else Screen.Home,
+            ) {
+                composable<Screen.Auth> {
+                    AuthScreen(viewModel = authViewModel)
+                }
+                composable<Screen.Home> {
+                    val readyState = state as? AppState.Ready
+                    if (readyState != null) {
+                        TodayScreen(
+                            userId = readyState.userId,
+                            initialPartnerId = readyState.partnerId,
+                            initialPartnershipId = readyState.partnershipId,
+                            onPairClicked = { navController.navigate(Screen.Pairing) },
+                            onWhiteboardClicked = { navController.navigate(Screen.Whiteboard) },
+                            onPaired = { rootViewModel.onPaired() },
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+                composable<Screen.Pairing> {
+                    val readyState = state as? AppState.Ready
+                    if (readyState != null) {
+                        PairingScreen(
+                            onBack = { navController.popBackStack() },
+                            onPaired = {
+                                rootViewModel.onPaired()
+                                navController.popBackStack()
+                            },
+                        )
+                    }
+                }
+                composable<Screen.Whiteboard> {
+                    val readyState = state as? AppState.Ready
+                    val partnershipId = readyState?.partnershipId
+                    if (readyState != null && partnershipId != null) {
+                        WhiteboardScreen(
+                            userId = readyState.userId,
+                            partnerId = readyState.partnerId.orEmpty(),
+                            partnershipId = partnershipId,
+                            onBack = { navController.popBackStack() },
+                            onOpenArchive = { navController.navigate(Screen.Archive) },
+                        )
+                    }
+                }
+                composable<Screen.Archive> {
+                    val readyState = state as? AppState.Ready
+                    val partnershipId = readyState?.partnershipId
+                    if (readyState != null && partnershipId != null) {
+                        ArchiveScreen(
+                            userId = readyState.userId,
+                            partnerId = readyState.partnerId.orEmpty(),
+                            partnershipId = partnershipId,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                }
+            }
+        }
     }
 }

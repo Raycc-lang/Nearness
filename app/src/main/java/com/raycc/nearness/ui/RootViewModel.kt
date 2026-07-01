@@ -15,8 +15,11 @@ import kotlinx.coroutines.launch
 sealed interface AppState {
     data object Loading : AppState
     data object NeedsAuth : AppState
-    data object NeedsPairing : AppState
-    data class Ready(val userId: String, val partnerId: String) : AppState
+    data class Ready(
+        val userId: String,
+        val partnerId: String?,
+        val partnershipId: String?,
+    ) : AppState
 }
 
 /** Decides the top-level destination from session + pairing state. */
@@ -42,15 +45,18 @@ class RootViewModel(
     }
 
     private suspend fun resolvePairing() {
-        val profile = profiles.getMyProfile().getOrNull()
         val userId = auth.currentUserId
-        val partnerId = profile?.partnerId
-        _state.value = if (userId != null && partnerId != null) {
-            registerFcmToken()
-            AppState.Ready(userId = userId, partnerId = partnerId)
-        } else {
-            AppState.NeedsPairing
+        if (userId == null) {
+            _state.value = AppState.NeedsAuth
+            return
         }
+        val partnership = profiles.getMyPartnership().getOrNull()
+        val partnerId = partnership?.partnerOf(userId)
+        val partnershipId = partnership?.id
+        if (partnerId != null) {
+            registerFcmToken()
+        }
+        _state.value = AppState.Ready(userId = userId, partnerId = partnerId, partnershipId = partnershipId)
     }
 
     /** Upsert the FCM token on launch (tokens rotate). */

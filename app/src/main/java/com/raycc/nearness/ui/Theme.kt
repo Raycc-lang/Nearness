@@ -7,25 +7,24 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val Warm = Color(0xFFE8A87C)
-private val Sage = Color(0xFF85B79D)
-private val Cream = Color(0xFFF3EDE3)
-private val Ink = Color(0xFF2E2A26)
-
 private val LightColors = lightColorScheme(
-    primary = Warm,
-    secondary = Sage,
-    background = Cream,
-    surface = Color(0xFFFBF8F2),
-    onBackground = Ink,
-    onSurface = Ink,
+    primary = Color(0xFF607D6E),         // Muted sage green
+    secondary = Color(0xFFB58A8A),       // Dusty rose
+    background = Color(0xFFF9F6F0),      // Soft warm off-white / sand
+    surface = Color(0xFFFFFFFF),         // Creamy white
+    onBackground = Color(0xFF2C2C2E),    // Deep charcoal
+    onSurface = Color(0xFF2C2C2E),
+    onSurfaceVariant = Color(0xFF7E7E82), // Muted warm gray
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Warm,
-    secondary = Sage,
-    background = Color(0xFF1B1916),
-    surface = Color(0xFF252119),
+    primary = Color(0xFF7A9A8A),         // Muted sage green
+    secondary = Color(0xFFD4A5A5),       // Dusty rose
+    background = Color(0xFF121214),      // Dark charcoal slate
+    surface = Color(0xFF1E1E20),         // Creamy dark surface
+    onBackground = Color(0xFFE2E2E6),    // Light text
+    onSurface = Color(0xFFE2E2E6),
+    onSurfaceVariant = Color(0xFFA1A1A5), // Muted warm gray
 )
 
 @Composable

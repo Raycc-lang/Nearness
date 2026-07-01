@@ -205,8 +205,8 @@ PartnerCard on the Home screen. Tapping opens a bottom sheet with the signal
 picker. Signals are never a browsable destination — they are always an action.
 
 **Display:** A soft ambient banner on the Home screen showing the most recent
-signal received in the last 2 hours, phrased as "[Name] sent you a [signal]"
-(e.g. "Ray sent you a warm hug"). After 2 hours it disappears automatically.
+signal received in the last 20 minutes, phrased as "[Name] sent you a [signal]"
+(e.g. "Ray sent you a warm hug"). After 20 minutes it disappears automatically.
 No relative time is shown. No signal history screen — signals are
 intentionally ephemeral.
 
@@ -269,7 +269,7 @@ App
 │   ├── MyCodeTab           Display own code (large, copyable)
 │   └── EnterCodeTab        Enter partner's code
 └── HomeScreen              Single screen, no tab bar
-    ├── SignalBanner        Last received signal (last 24 hrs, ambient)
+    ├── SignalBanner        Last received signal (last 20 minutes, ambient)
     ├── PartnerCard         Their activity + note + schedule timeline
     │   └── SignalFAB       Send Signal button, anchored to PartnerCard
     │       └── SignalSheet Bottom sheet: preset signals + custom field

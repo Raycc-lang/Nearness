@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.messaging.FirebaseMessaging
 import com.raycc.nearness.data.AuthRepository
+import com.raycc.nearness.data.LocalCacheRepository
+import com.raycc.nearness.data.PairingSnapshot
 import com.raycc.nearness.data.ProfileRepository
 import io.github.jan.supabase.gotrue.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,7 @@ sealed interface AppState {
 
 /** Decides the top-level destination from session + pairing state. */
 class RootViewModel(
+    private val cache: LocalCacheRepository,
     private val auth: AuthRepository = AuthRepository(),
     private val profiles: ProfileRepository = ProfileRepository(),
 ) : ViewModel() {
@@ -34,10 +37,16 @@ class RootViewModel(
     init {
         viewModelScope.launch {
             auth.sessionStatus.collect { status ->
-                Log.d("Nearness", "sessionStatus=$status")
+                // Status-only: SessionStatus.Authenticated carries live tokens.
+                Log.d("Nearness", "sessionStatus=${status::class.simpleName}")
                 when (status) {
                     is SessionStatus.Authenticated -> resolvePairing()
-                    is SessionStatus.NotAuthenticated -> _state.value = AppState.NeedsAuth
+                    is SessionStatus.NotAuthenticated -> {
+                    // Wipe cached couple data so a different/next account never
+                    // renders the previous user's snapshot at cold start.
+                    cache.clear()
+                    _state.value = AppState.NeedsAuth
+                }
                     else -> _state.value = AppState.Loading
                 }
             }
@@ -50,13 +59,38 @@ class RootViewModel(
             _state.value = AppState.NeedsAuth
             return
         }
-        val partnership = profiles.getMyPartnership().getOrNull()
-        val partnerId = partnership?.partnerOf(userId)
-        val partnershipId = partnership?.id
-        if (partnerId != null) {
-            registerFcmToken()
+
+        // Optimistic: go Ready immediately from cache, skipping a round-trip.
+        cache.readPairing(userId)?.let { cached ->
+            _state.value = AppState.Ready(
+                userId = userId,
+                partnerId = cached.partnerId,
+                partnershipId = cached.partnershipId,
+            )
         }
-        _state.value = AppState.Ready(userId = userId, partnerId = partnerId, partnershipId = partnershipId)
+
+        // Verify against the server, then persist + emit the fresh result.
+        profiles.getMyPartnership()
+            .onSuccess { partnership ->
+                val partnerId = partnership?.partnerOf(userId)
+                val partnershipId = partnership?.id
+                if (partnerId != null) {
+                    registerFcmToken()
+                }
+                cache.writePairing(PairingSnapshot(userId, partnerId, partnershipId))
+                _state.value = AppState.Ready(
+                    userId = userId,
+                    partnerId = partnerId,
+                    partnershipId = partnershipId,
+                )
+            }
+            .onFailure {
+                // Transient failure: keep any optimistic state; never downgrade a
+                // paired user to unpaired. If we had no cache, fall back to Ready.
+                if (_state.value !is AppState.Ready) {
+                    _state.value = AppState.Ready(userId = userId, partnerId = null, partnershipId = null)
+                }
+            }
     }
 
     /** Upsert the FCM token on launch (tokens rotate). */

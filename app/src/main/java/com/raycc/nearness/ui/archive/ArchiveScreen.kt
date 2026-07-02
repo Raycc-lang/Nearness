@@ -46,6 +46,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import com.raycc.nearness.data.LocalCacheRepository
 import coil.compose.AsyncImage
 import com.raycc.nearness.domain.Presence
 import com.raycc.nearness.domain.WhiteboardItem
@@ -63,10 +65,12 @@ fun ArchiveScreen(
         key = "$userId-$partnerId-$partnershipId",
         factory = viewModelFactory {
             initializer {
+                val app = this[APPLICATION_KEY]!!
                 ArchiveViewModel(
                     userId = userId,
                     partnerId = partnerId,
                     partnershipId = partnershipId,
+                    cache = LocalCacheRepository(app),
                 )
             }
         },

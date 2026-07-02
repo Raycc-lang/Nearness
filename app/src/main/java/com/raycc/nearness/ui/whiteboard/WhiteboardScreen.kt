@@ -88,6 +88,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import com.raycc.nearness.data.LocalCacheRepository
 import coil.compose.AsyncImage
 import com.raycc.nearness.domain.Presence
 import com.raycc.nearness.domain.WhiteboardItem
@@ -115,10 +117,12 @@ fun WhiteboardScreen(
         key = "$userId-$partnerId-$partnershipId",
         factory = viewModelFactory {
             initializer {
+                val app = this[APPLICATION_KEY]!!
                 WhiteboardViewModel(
                     userId = userId,
                     partnerId = partnerId,
                     partnershipId = partnershipId,
+                    cache = LocalCacheRepository(app),
                 )
             }
         },
@@ -692,7 +696,12 @@ private fun PostSheet(
         val tempFile = File(context.cacheDir, "temp_record.m4a")
         recordedFile = tempFile
         try {
-            recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()
+            recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
             recorder?.apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)

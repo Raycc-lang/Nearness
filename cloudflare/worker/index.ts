@@ -20,11 +20,32 @@ export default {
     const headers = new Headers(request.headers);
     headers.set("host", supabaseUrl.host);
 
-    return fetch(targetUrl, {
+    // Auth requests and responses can carry one-time codes and session tokens.
+    // Keep logs status-only so `wrangler tail` is useful without exposing secrets.
+    const isAuth = incomingUrl.pathname.startsWith("/auth/v1");
+    if (isAuth) {
+      console.log(`[proxy] -> ${request.method} ${incomingUrl.pathname}`);
+    }
+
+    // GET/HEAD must not carry a body. Forwarding request.body (even an
+    // empty stream) for these methods makes fetch throw
+    // "Request with a GET or HEAD method cannot have a body" — which is
+    // what broke GET /auth/v1/user after a successful PKCE exchange and
+    // silently dropped the session, sending the user back to sign-in.
+    const method = request.method.toUpperCase();
+    const noBody = method === "GET" || method === "HEAD";
+
+    const upstream = await fetch(targetUrl, {
       method: request.method,
       headers,
-      body: request.body,
+      body: noBody ? undefined : request.body,
       redirect: "manual",
     });
+
+    if (isAuth) {
+      console.log(`[proxy] <- ${request.method} ${incomingUrl.pathname} ${upstream.status}`);
+    }
+
+    return upstream;
   },
 };

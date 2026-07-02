@@ -33,10 +33,25 @@ class AuthRepository {
      */
     fun handleDeeplink(intent: Intent): String? {
         val data = intent.data ?: return null
+        val query = data.query
         val fragment = data.fragment
-        if (fragment != null && fragment.contains("error=")) {
+        Log.d(
+            "Nearness",
+            "handleDeeplink hasQuery=${query != null} " +
+                "hasFragment=${fragment != null} " +
+                "hasCode=${data.getQueryParameter("code") != null}"
+        )
+
+        // Errors can arrive in the query (PKCE flow: ?error=...) or in the
+        // fragment (implicit flow: #error=...). The old check only looked at
+        // the fragment, so PKCE errors (expired / already-used link) were
+        // silently swallowed and the user landed back on the sign-in screen.
+        val hasError = (query != null && query.contains("error=")) ||
+            (fragment != null && fragment.contains("error="))
+        if (hasError) {
             return "Magic link expired or already used. Please resend."
         }
+
         return try {
             supabase.handleDeeplinks(intent)
             null

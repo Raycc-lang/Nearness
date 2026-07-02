@@ -2,8 +2,12 @@ package com.raycc.nearness.ui.archive
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.raycc.nearness.data.LocalCacheRepository
 import com.raycc.nearness.data.ProfileRepository
 import com.raycc.nearness.data.WhiteboardRepository
+import com.raycc.nearness.data.WhiteboardSnapshot
+import com.raycc.nearness.data.toCached
+import com.raycc.nearness.data.toDomain
 import com.raycc.nearness.domain.WhiteboardItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +47,7 @@ class ArchiveViewModel(
     private val userId: String,
     private val partnerId: String,
     private val partnershipId: String,
+    private val cache: LocalCacheRepository,
     private val repo: WhiteboardRepository = WhiteboardRepository(),
     private val profilesRepo: ProfileRepository = ProfileRepository(),
 ) : ViewModel() {
@@ -51,31 +56,59 @@ class ArchiveViewModel(
     val uiState: StateFlow<ArchiveUiState> = _uiState.asStateFlow()
 
     init {
-        loadProfiles()
-        load()
+        viewModelScope.launch {
+            // Render the last-known archive instantly, then refresh in the background.
+            cache.readArchive(partnershipId)?.let { snap ->
+                val items = snap.items.map { it.toDomain() }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        all = items,
+                        myName = snap.myName,
+                        partnerName = snap.partnerName,
+                    )
+                }
+                fetchSignedUrls(items)
+            }
+            load()
+        }
     }
 
-    private fun loadProfiles() {
-        viewModelScope.launch {
-            val mine = profilesRepo.getMyProfile().getOrNull()
-            val partner = profilesRepo.getProfile(partnerId).getOrNull()
-            _uiState.update {
-                it.copy(
-                    myName = mine?.displayName ?: "You",
-                    partnerName = partner?.displayName ?: "Partner",
-                )
-            }
+    /** Fetches both display names. Called inside [load] so names and items are
+     *  persisted as one consistent snapshot (no interleaving persist). */
+    private suspend fun loadProfiles() {
+        val mine = profilesRepo.getMyProfile().getOrNull()
+        val partner = profilesRepo.getProfile(partnerId).getOrNull()
+        _uiState.update {
+            it.copy(
+                myName = mine?.displayName ?: "You",
+                partnerName = partner?.displayName ?: "Partner",
+            )
         }
+    }
+
+    private suspend fun persistSnapshot() {
+        val s = _uiState.value
+        cache.writeArchive(
+            WhiteboardSnapshot(
+                partnershipId = partnershipId,
+                myName = s.myName,
+                partnerName = s.partnerName,
+                items = s.all.map { it.toCached() },
+            )
+        )
     }
 
     fun load() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+            loadProfiles()
             repo.getArchive(partnershipId)
                 .onSuccess { items ->
                     _uiState.update { it.copy(all = items) }
                     fetchSignedUrls(items)
                     _uiState.update { it.copy(isLoading = false) }
+                    persistSnapshot()
                 }
                 .onFailure { e -> _uiState.update { it.copy(isLoading = false, error = e.message) } }
         }
@@ -106,9 +139,11 @@ class ArchiveViewModel(
         val previous = _uiState.value.all
         _uiState.update { it.copy(all = it.all.filterNot { i -> i.id == itemId }) }
         viewModelScope.launch {
-            repo.setArchived(itemId, archived = false).onFailure { e ->
-                _uiState.update { it.copy(all = previous, error = e.message) }
-            }
+            repo.setArchived(itemId, archived = false)
+                .onSuccess { persistSnapshot() }
+                .onFailure { e ->
+                    _uiState.update { it.copy(all = previous, error = e.message) }
+                }
         }
     }
 }

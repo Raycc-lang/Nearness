@@ -1,5 +1,7 @@
 # Secrets — never commit
 local.properties
+nearness-release.jks
+cloudflare/worker/wrangler.toml
 app/google-services.json
 supabase/.env
 .env

@@ -83,6 +83,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import com.raycc.nearness.data.LocalCacheRepository
 import coil.compose.AsyncImage
 import com.raycc.nearness.domain.ActivityType
 import com.raycc.nearness.domain.Presence
@@ -110,10 +112,12 @@ fun TodayScreen(
         key = "$userId-$initialPartnerId-$initialPartnershipId",
         factory = viewModelFactory {
             initializer {
+                val app = this[APPLICATION_KEY]!!
                 TodayViewModel(
                     userId = userId,
                     initialPartnerId = initialPartnerId,
                     initialPartnershipId = initialPartnershipId,
+                    cache = LocalCacheRepository(app),
                 )
             }
         },

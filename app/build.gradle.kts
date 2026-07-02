@@ -30,8 +30,18 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${secret("SUPABASE_ANON_KEY")}\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(secret("RELEASE_STORE_FILE"))
+            storePassword = secret("RELEASE_STORE_PASSWORD")
+            keyAlias = secret("RELEASE_KEY_ALIAS")
+            keyPassword = secret("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -2,11 +2,15 @@ package com.raycc.nearness.ui.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.raycc.nearness.data.LocalCacheRepository
 import com.raycc.nearness.data.ProfileRepository
 import com.raycc.nearness.data.ScheduleRepository
 import com.raycc.nearness.data.SignalsRepository
 import com.raycc.nearness.data.StatusRepository
+import com.raycc.nearness.data.TodaySnapshot
 import com.raycc.nearness.data.WhiteboardRepository
+import com.raycc.nearness.data.toCached
+import com.raycc.nearness.data.toDomain
 import com.raycc.nearness.domain.ActivityType
 import com.raycc.nearness.domain.ScheduleBlock
 import com.raycc.nearness.domain.Signal
@@ -28,6 +32,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 data class TodayUiState(
@@ -52,6 +57,7 @@ class TodayViewModel(
     private val userId: String,
     private val initialPartnerId: String?,
     private val initialPartnershipId: String?,
+    private val cache: LocalCacheRepository,
     private val statusRepo: StatusRepository = StatusRepository(),
     private val scheduleRepo: ScheduleRepository = ScheduleRepository(),
     private val signalsRepo: SignalsRepository = SignalsRepository(),
@@ -74,7 +80,87 @@ class TodayViewModel(
     private var cachedPartnerAvatarUrl: String? = null
 
     init {
-        refresh()
+        viewModelScope.launch {
+            // Render last-known state instantly (if any), then refresh in background.
+            cache.readToday(userId)?.let { snapshot ->
+                _uiState.update { applyCachedSnapshot(it, snapshot) }
+            }
+            refresh()
+        }
+    }
+
+    /**
+     * Seeds UI state from a cached snapshot for a fast cold start. Sets
+     * [TodayUiState.isInitialLoading] to false so the screen renders immediately;
+     * the subsequent refresh flips [TodayUiState.isRefreshing] instead.
+     *
+     * Intentionally excludes the active signal (ephemeral) and drops schedule
+     * blocks cached for a previous day.
+     */
+    private fun applyCachedSnapshot(current: TodayUiState, snap: TodaySnapshot): TodayUiState {
+        val now = Clock.System.now()
+        val zone = TimeZone.currentSystemDefault()
+        val todayStr = now.toLocalDateTime(zone).date.toString()
+        val sameDay = snap.cachedDate == todayStr
+
+        // Reuse cached signed URLs only while still valid, and seed the in-memory
+        // avatar caches so the upcoming refresh can skip re-signing them.
+        val yourUrlValid = snap.yourAvatarUrl != null &&
+            (snap.yourAvatarUrlExpiresAt?.let { it > now } == true)
+        if (yourUrlValid) {
+            cachedYourAvatarPath = snap.yourAvatarPath
+            cachedYourAvatarUrl = snap.yourAvatarUrl
+        }
+        val partnerUrlValid = snap.partnerAvatarUrl != null &&
+            (snap.partnerAvatarUrlExpiresAt?.let { it > now } == true)
+        if (partnerUrlValid) {
+            cachedPartnerAvatarPath = snap.partnerAvatarPath
+            cachedPartnerAvatarUrl = snap.partnerAvatarUrl
+        }
+
+        return current.copy(
+            isInitialLoading = false,
+            isPaired = snap.partnerId != null,
+            partnerId = snap.partnerId,
+            partnerName = snap.partnerName,
+            partnerAvatarUrl = if (partnerUrlValid) snap.partnerAvatarUrl else null,
+            partnerStatus = snap.partnerStatus?.toDomain(),
+            partnerSchedule = if (sameDay) snap.partnerSchedule.map { it.toDomain() } else emptyList(),
+            yourName = snap.yourName,
+            yourAvatarUrl = if (yourUrlValid) snap.yourAvatarUrl else null,
+            yourStatus = snap.yourStatus?.toDomain(),
+            yourSchedule = if (sameDay) snap.yourSchedule.map { it.toDomain() } else emptyList(),
+            whiteboardPreview = snap.whiteboardPreview,
+        )
+    }
+
+    /** Persists the cacheable subset of the current UI state for the next cold start. */
+    private suspend fun persistSnapshot() {
+        val s = _uiState.value
+        val now = Clock.System.now()
+        val zone = TimeZone.currentSystemDefault()
+        val todayStr = now.toLocalDateTime(zone).date.toString()
+        val urlExpiry = now + AVATAR_URL_CACHE_TTL
+        cache.writeToday(
+            TodaySnapshot(
+                ownerUserId = userId,
+                cachedDate = todayStr,
+                yourName = s.yourName,
+                yourAvatarPath = cachedYourAvatarPath,
+                yourAvatarUrl = s.yourAvatarUrl,
+                yourAvatarUrlExpiresAt = s.yourAvatarUrl?.let { urlExpiry },
+                yourStatus = s.yourStatus?.toCached(),
+                yourSchedule = s.yourSchedule.map { it.toCached() },
+                partnerId = s.partnerId,
+                partnerName = s.partnerName,
+                partnerAvatarPath = cachedPartnerAvatarPath,
+                partnerAvatarUrl = s.partnerAvatarUrl,
+                partnerAvatarUrlExpiresAt = s.partnerAvatarUrl?.let { urlExpiry },
+                partnerStatus = s.partnerStatus?.toCached(),
+                partnerSchedule = s.partnerSchedule.map { it.toCached() },
+                whiteboardPreview = s.whiteboardPreview,
+            )
+        )
     }
 
     fun refresh() {
@@ -188,6 +274,8 @@ class TodayViewModel(
                 errorMessage = null,
             )
         }
+
+        persistSnapshot()
     }
 
     fun startPolling() {
@@ -257,6 +345,8 @@ class TodayViewModel(
                     whiteboardPreview = whiteboardPreview,
                 )
             }
+
+            persistSnapshot()
         }
     }
 
@@ -267,6 +357,7 @@ class TodayViewModel(
         }
         viewModelScope.launch {
             statusRepo.upsertStatus(userId, activity, note)
+                .onSuccess { persistSnapshot() }
                 .onFailure { e ->
                     _uiState.update { it.copy(yourStatus = previous, errorMessage = e.message) }
                 }
@@ -280,6 +371,7 @@ class TodayViewModel(
         }
         viewModelScope.launch {
             scheduleRepo.deleteBlock(blockId)
+                .onSuccess { persistSnapshot() }
                 .onFailure { e ->
                     _uiState.update { it.copy(yourSchedule = previous, errorMessage = e.message) }
                 }
@@ -314,5 +406,9 @@ class TodayViewModel(
 
     private companion object {
         val POLL_INTERVAL = 30.seconds
+
+        /** Signed avatar URLs live ~1h; cache slightly below that so a reused URL
+         *  from cache is still valid when the next cold start reads it. */
+        val AVATAR_URL_CACHE_TTL = 50.minutes
     }
 }

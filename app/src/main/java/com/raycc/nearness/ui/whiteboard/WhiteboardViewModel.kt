@@ -2,8 +2,12 @@ package com.raycc.nearness.ui.whiteboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.raycc.nearness.data.LocalCacheRepository
 import com.raycc.nearness.data.ProfileRepository
 import com.raycc.nearness.data.WhiteboardRepository
+import com.raycc.nearness.data.WhiteboardSnapshot
+import com.raycc.nearness.data.toCached
+import com.raycc.nearness.data.toDomain
 import com.raycc.nearness.domain.WhiteboardItem
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +36,7 @@ class WhiteboardViewModel(
     private val userId: String,
     private val partnerId: String,
     private val partnershipId: String,
+    private val cache: LocalCacheRepository,
     private val repo: WhiteboardRepository = WhiteboardRepository(),
     private val profilesRepo: ProfileRepository = ProfileRepository(),
 ) : ViewModel() {
@@ -43,21 +48,47 @@ class WhiteboardViewModel(
     private val refreshMutex = Mutex()
 
     init {
-        loadProfiles()
-        loadFeed()
+        viewModelScope.launch {
+            // Render the last-known feed instantly, then refresh in the background.
+            cache.readWhiteboard(partnershipId)?.let { snap ->
+                val items = snap.items.map { it.toDomain() }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        items = items,
+                        myName = snap.myName,
+                        partnerName = snap.partnerName,
+                    )
+                }
+                fetchSignedUrls(items)
+            }
+            loadFeed()
+        }
     }
 
-    private fun loadProfiles() {
-        viewModelScope.launch {
-            val mine = profilesRepo.getMyProfile().getOrNull()
-            val partner = profilesRepo.getProfile(partnerId).getOrNull()
-            _uiState.update {
-                it.copy(
-                    myName = mine?.displayName ?: "You",
-                    partnerName = partner?.displayName ?: "Partner",
-                )
-            }
+    /** Fetches both display names. Called inside [refreshFeed] so names and items
+     *  are persisted as one consistent snapshot (no interleaving persist). */
+    private suspend fun loadProfiles() {
+        val mine = profilesRepo.getMyProfile().getOrNull()
+        val partner = profilesRepo.getProfile(partnerId).getOrNull()
+        _uiState.update {
+            it.copy(
+                myName = mine?.displayName ?: "You",
+                partnerName = partner?.displayName ?: "Partner",
+            )
         }
+    }
+
+    private suspend fun persistSnapshot() {
+        val s = _uiState.value
+        cache.writeWhiteboard(
+            WhiteboardSnapshot(
+                partnershipId = partnershipId,
+                myName = s.myName,
+                partnerName = s.partnerName,
+                items = s.items.map { it.toCached() },
+            )
+        )
     }
 
     fun loadFeed() {
@@ -130,9 +161,11 @@ class WhiteboardViewModel(
         val previous = _uiState.value.items
         _uiState.update { it.copy(items = it.items.filterNot { i -> i.id == itemId || i.parentId == itemId }) }
         viewModelScope.launch {
-            repo.setArchived(itemId, archived = true).onFailure { e ->
-                _uiState.update { it.copy(items = previous, error = e.message) }
-            }
+            repo.setArchived(itemId, archived = true)
+                .onSuccess { persistSnapshot() }
+                .onFailure { e ->
+                    _uiState.update { it.copy(items = previous, error = e.message) }
+                }
         }
     }
 
@@ -154,11 +187,13 @@ class WhiteboardViewModel(
     private suspend fun refreshFeed(showLoading: Boolean) {
         refreshMutex.withLock {
             if (showLoading) _uiState.update { it.copy(isLoading = true) }
+            loadProfiles()
             repo.getActiveFeed(partnershipId)
                 .onSuccess { items ->
                     _uiState.update { it.copy(items = items) }
                     fetchSignedUrls(items)
                     _uiState.update { it.copy(isLoading = false) }
+                    persistSnapshot()
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(isLoading = false, error = e.message) }

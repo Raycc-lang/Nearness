@@ -18,10 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.raycc.nearness.data.AuthRepository
+import com.raycc.nearness.data.LocalCacheRepository
 import com.raycc.nearness.ui.AppState
 import com.raycc.nearness.ui.NearnessTheme
 import com.raycc.nearness.ui.RootViewModel
@@ -58,7 +62,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handleDeepLink(intent: Intent) {
         val data = intent.data
-        Log.d("Nearness", "handleDeepLink data=$data fragment=${data?.fragment}")
+        // Status-only: the deep-link URI carries the one-time PKCE code.
+        Log.d("Nearness", "handleDeepLink hasData=${data != null}")
         if (data == null) return
         val error = authRepository.handleDeeplink(intent)
         if (error != null) authViewModel.onDeepLinkError(error)
@@ -69,7 +74,14 @@ class MainActivity : ComponentActivity() {
 private fun NearnessApp(
     authViewModel: AuthViewModel,
     authRepository: AuthRepository,
-    rootViewModel: RootViewModel = viewModel(),
+    rootViewModel: RootViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY]!!
+                RootViewModel(cache = LocalCacheRepository(app))
+            }
+        },
+    ),
 ) {
     val state by rootViewModel.state.collectAsStateWithLifecycle()
     val navController = rememberNavController()

@@ -191,6 +191,9 @@ declare
     chars  text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 begin
     if caller is null then raise exception 'Not authenticated'; end if;
+    -- Serialize all pairing ops: concurrent cross-redemption would otherwise
+    -- create two completed partnerships for the same two people.
+    perform pg_advisory_xact_lock(hashtext('nearness_pairing')::bigint);
     if exists (select 1 from public.partnerships
                where (user_a_id = caller and user_b_id is not null)
                   or user_b_id = caller) then
@@ -213,6 +216,9 @@ declare
     me uuid := auth.uid();
 begin
     if me is null then raise exception 'Not authenticated'; end if;
+    -- Serialize all pairing ops: concurrent cross-redemption would otherwise
+    -- create two completed partnerships for the same two people.
+    perform pg_advisory_xact_lock(hashtext('nearness_pairing')::bigint);
     select * into p from public.partnerships
         where pairing_code = upper(code)
           and pairing_code_expires_at > now()

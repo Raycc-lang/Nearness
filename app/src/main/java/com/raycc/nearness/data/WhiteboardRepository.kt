@@ -96,16 +96,23 @@ class WhiteboardRepository {
     ): Result<Unit> = runCatching {
         val path = "$partnershipId/$itemId/$fileName"
         supabase.storage.from(BUCKET).upload(path, bytes, upsert = false)
-        supabase.from("whiteboard_items").insert(
-            WhiteboardInsert(
-                partnershipId = partnershipId,
-                authorId = authorId,
-                parentId = parentId,
-                type = type,
-                storagePath = path,
-                caption = caption,
-            ),
-        )
+        try {
+            supabase.from("whiteboard_items").insert(
+                WhiteboardInsert(
+                    partnershipId = partnershipId,
+                    authorId = authorId,
+                    parentId = parentId,
+                    type = type,
+                    storagePath = path,
+                    caption = caption,
+                ),
+            )
+        } catch (e: Exception) {
+            // Row insert failed after the upload succeeded — clean up the orphaned
+            // storage object (best-effort) so it doesn't leak quota forever.
+            runCatching { supabase.storage.from(BUCKET).delete(listOf(path)) }
+            throw e
+        }
     }
 
     suspend fun signedUrl(path: String): Result<String> = runCatching {
@@ -114,6 +121,19 @@ class WhiteboardRepository {
 
     suspend fun setArchived(id: String, archived: Boolean): Result<Unit> = runCatching {
         val patch = ArchivePatch(if (archived) Clock.System.now().toString() else null)
-        supabase.from("whiteboard_items").update(patch) { filter { eq("id", id) } }
+        supabase.from("whiteboard_items").update(patch) {
+            filter {
+                if (archived) {
+                    // Archiving cascades to direct replies so none are left orphaned
+                    // (visible with no parent) until the nightly cron catches them.
+                    or {
+                        eq("id", id)
+                        eq("parent_id", id)
+                    }
+                } else {
+                    eq("id", id)
+                }
+            }
+        }
     }
 }

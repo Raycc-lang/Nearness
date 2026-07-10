@@ -14,6 +14,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,6 +36,7 @@ import com.raycc.nearness.ui.archive.ArchiveScreen
 import com.raycc.nearness.ui.auth.AuthScreen
 import com.raycc.nearness.ui.auth.AuthViewModel
 import com.raycc.nearness.ui.pairing.PairingScreen
+import com.raycc.nearness.service.NotificationHelper
 import com.raycc.nearness.ui.today.TodayScreen
 import com.raycc.nearness.ui.whiteboard.WhiteboardScreen
 
@@ -42,14 +45,24 @@ class MainActivity : ComponentActivity() {
     private val authRepository = AuthRepository()
     private val authViewModel by viewModels<AuthViewModel>()
 
+    // Route requested by a tapped notification, awaiting an authed/Ready state
+    // before it can be navigated to. Observable so NearnessApp reacts to it.
+    private var pendingRoute by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleDeepLink(intent)
+        handleNotificationRoute(intent)
         setContent {
             NearnessTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    NearnessApp(authViewModel = authViewModel, authRepository = authRepository)
+                    NearnessApp(
+                        authViewModel = authViewModel,
+                        authRepository = authRepository,
+                        pendingRoute = pendingRoute,
+                        onRouteHandled = { pendingRoute = null },
+                    )
                 }
             }
         }
@@ -58,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleDeepLink(intent)
+        handleNotificationRoute(intent)
     }
 
     private fun handleDeepLink(intent: Intent) {
@@ -68,12 +82,20 @@ class MainActivity : ComponentActivity() {
         val error = authRepository.handleDeeplink(intent)
         if (error != null) authViewModel.onDeepLinkError(error)
     }
+
+    /** Records a notification tap's target route so NearnessApp can navigate once Ready. */
+    private fun handleNotificationRoute(intent: Intent) {
+        val route = intent.getStringExtra(NotificationHelper.EXTRA_ROUTE) ?: return
+        pendingRoute = route
+    }
 }
 
 @Composable
 private fun NearnessApp(
     authViewModel: AuthViewModel,
     authRepository: AuthRepository,
+    pendingRoute: String?,
+    onRouteHandled: () -> Unit,
     rootViewModel: RootViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -103,6 +125,21 @@ private fun NearnessApp(
             }
             else -> {}
         }
+    }
+
+    // Notification-tap routing. Only act once authed (Ready); otherwise keep the
+    // route pending so we never navigate into an authed screen unauthenticated.
+    LaunchedEffect(pendingRoute, state) {
+        val route = pendingRoute ?: return@LaunchedEffect
+        val readyState = state as? AppState.Ready ?: return@LaunchedEffect
+        // Only "whiteboard" (and only when paired) is a distinct destination; every
+        // other route just wants Home, which the state effect above already lands.
+        // Navigate solely for the whiteboard case so we don't push a duplicate Home.
+        if (route == "whiteboard" && readyState.partnershipId != null) {
+            navController.navigate(Screen.Whiteboard)
+        }
+        // Clear so it doesn't re-fire on recomposition/config change.
+        onRouteHandled()
     }
 
     when (val s = state) {

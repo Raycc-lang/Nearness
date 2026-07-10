@@ -61,7 +61,6 @@ import androidx.compose.material3.SheetState
 import androidx.compose.ui.graphics.Color
 import kotlinx.datetime.toInstant
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -134,9 +134,9 @@ fun TodayScreen(
     val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val profileSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    DisposableEffect(viewModel) {
+    LifecycleStartEffect(viewModel) {
         viewModel.startPolling()
-        onDispose { viewModel.stopPolling() }
+        onStopOrDispose { viewModel.stopPolling() }
     }
 
     LaunchedEffect(uiState.isPaired) {

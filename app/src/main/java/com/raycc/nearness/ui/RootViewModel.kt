@@ -42,11 +42,13 @@ class RootViewModel(
                 when (status) {
                     is SessionStatus.Authenticated -> resolvePairing()
                     is SessionStatus.NotAuthenticated -> {
-                    // Wipe cached couple data so a different/next account never
-                    // renders the previous user's snapshot at cold start.
-                    cache.clear()
-                    _state.value = AppState.NeedsAuth
-                }
+                        // Only a deliberate sign-out should wipe cached couple data
+                        // so a different/next account never renders the previous
+                        // user's snapshot. A transient expired session keeps the
+                        // cache; it's re-validated on the next successful auth.
+                        if (status.isSignOut) cache.clear()
+                        _state.value = AppState.NeedsAuth
+                    }
                     else -> _state.value = AppState.Loading
                 }
             }

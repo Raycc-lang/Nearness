@@ -76,8 +76,10 @@ class TodayViewModel(
 
     private var cachedYourAvatarPath: String? = null
     private var cachedYourAvatarUrl: String? = null
+    private var cachedYourAvatarExpiresAt: Instant? = null
     private var cachedPartnerAvatarPath: String? = null
     private var cachedPartnerAvatarUrl: String? = null
+    private var cachedPartnerAvatarExpiresAt: Instant? = null
 
     init {
         viewModelScope.launch {
@@ -110,12 +112,14 @@ class TodayViewModel(
         if (yourUrlValid) {
             cachedYourAvatarPath = snap.yourAvatarPath
             cachedYourAvatarUrl = snap.yourAvatarUrl
+            cachedYourAvatarExpiresAt = snap.yourAvatarUrlExpiresAt
         }
         val partnerUrlValid = snap.partnerAvatarUrl != null &&
             (snap.partnerAvatarUrlExpiresAt?.let { it > now } == true)
         if (partnerUrlValid) {
             cachedPartnerAvatarPath = snap.partnerAvatarPath
             cachedPartnerAvatarUrl = snap.partnerAvatarUrl
+            cachedPartnerAvatarExpiresAt = snap.partnerAvatarUrlExpiresAt
         }
 
         return current.copy(
@@ -137,10 +141,10 @@ class TodayViewModel(
     /** Persists the cacheable subset of the current UI state for the next cold start. */
     private suspend fun persistSnapshot() {
         val s = _uiState.value
-        val now = Clock.System.now()
         val zone = TimeZone.currentSystemDefault()
-        val todayStr = now.toLocalDateTime(zone).date.toString()
-        val urlExpiry = now + AVATAR_URL_CACHE_TTL
+        val todayStr = Clock.System.now().toLocalDateTime(zone).date.toString()
+        // Persist the actual signing expiry tracked per URL, not a fresh now+TTL,
+        // so a URL signed earlier isn't cached past its real lifetime.
         cache.writeToday(
             TodaySnapshot(
                 ownerUserId = userId,
@@ -148,14 +152,14 @@ class TodayViewModel(
                 yourName = s.yourName,
                 yourAvatarPath = cachedYourAvatarPath,
                 yourAvatarUrl = s.yourAvatarUrl,
-                yourAvatarUrlExpiresAt = s.yourAvatarUrl?.let { urlExpiry },
+                yourAvatarUrlExpiresAt = s.yourAvatarUrl?.let { cachedYourAvatarExpiresAt },
                 yourStatus = s.yourStatus?.toCached(),
                 yourSchedule = s.yourSchedule.map { it.toCached() },
                 partnerId = s.partnerId,
                 partnerName = s.partnerName,
                 partnerAvatarPath = cachedPartnerAvatarPath,
                 partnerAvatarUrl = s.partnerAvatarUrl,
-                partnerAvatarUrlExpiresAt = s.partnerAvatarUrl?.let { urlExpiry },
+                partnerAvatarUrlExpiresAt = s.partnerAvatarUrl?.let { cachedPartnerAvatarExpiresAt },
                 partnerStatus = s.partnerStatus?.toCached(),
                 partnerSchedule = s.partnerSchedule.map { it.toCached() },
                 whiteboardPreview = s.whiteboardPreview,
@@ -188,8 +192,9 @@ class TodayViewModel(
             }
         }
 
+        val now = Clock.System.now()
         val zone = TimeZone.currentSystemDefault()
-        val today = Clock.System.now().toLocalDateTime(zone).date
+        val today = now.toLocalDateTime(zone).date
         val dayStart = today.atStartOfDayIn(zone)
         val dayEnd = dayStart + 1.days
 
@@ -197,12 +202,15 @@ class TodayViewModel(
         val myProfile = profilesRepo.getMyProfile().getOrNull()
         val yourName = myProfile?.displayName ?: "User"
         val yourAvatarUrl = myProfile?.avatarPath?.let { path ->
-            if (path == cachedYourAvatarPath && cachedYourAvatarUrl != null) {
+            if (path == cachedYourAvatarPath && cachedYourAvatarUrl != null &&
+                cachedYourAvatarExpiresAt?.let { it > now } == true
+            ) {
                 cachedYourAvatarUrl
             } else {
                 val url = profilesRepo.getAvatarUrl(path).getOrNull()
                 cachedYourAvatarPath = path
                 cachedYourAvatarUrl = url
+                cachedYourAvatarExpiresAt = url?.let { now + AVATAR_URL_CACHE_TTL }
                 url
             }
         }
@@ -223,12 +231,15 @@ class TodayViewModel(
             val partnerProfile = profilesRepo.getProfile(currentPartnerId).getOrNull()
             partnerName = partnerProfile?.displayName ?: "Partner"
             partnerAvatarUrl = partnerProfile?.avatarPath?.let { path ->
-                if (path == cachedPartnerAvatarPath && cachedPartnerAvatarUrl != null) {
+                if (path == cachedPartnerAvatarPath && cachedPartnerAvatarUrl != null &&
+                    cachedPartnerAvatarExpiresAt?.let { it > now } == true
+                ) {
                     cachedPartnerAvatarUrl
                 } else {
                     val url = profilesRepo.getAvatarUrl(path).getOrNull()
                     cachedPartnerAvatarPath = path
                     cachedPartnerAvatarUrl = url
+                    cachedPartnerAvatarExpiresAt = url?.let { now + AVATAR_URL_CACHE_TTL }
                     url
                 }
             }

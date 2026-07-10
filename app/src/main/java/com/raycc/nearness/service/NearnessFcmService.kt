@@ -21,6 +21,7 @@ class NearnessFcmService : FirebaseMessagingService() {
             channelId = channelId,
             title = notification.title ?: "Nearness",
             body = notification.body.orEmpty(),
+            route = message.data["route"],
         )
     }
 

@@ -20,6 +20,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 data class WhiteboardUiState(
@@ -46,6 +49,10 @@ class WhiteboardViewModel(
 
     private var pollJob: Job? = null
     private val refreshMutex = Mutex()
+
+    // Tracks when each signed URL expires so fetchSignedUrls knows to re-sign it,
+    // rather than treating "already in signedUrls" as valid forever.
+    private val signedUrlExpiry = mutableMapOf<String, Instant>()
 
     init {
         viewModelScope.launch {
@@ -203,14 +210,22 @@ class WhiteboardViewModel(
 
     private suspend fun fetchSignedUrls(items: List<WhiteboardItem>) {
         val paths = items.mapNotNull { it.storagePath }.distinct()
-        val currentUrls = _uiState.value.signedUrls.toMutableMap()
-        val missingPaths = paths.filter { it !in currentUrls }
-        if (missingPaths.isEmpty()) return
+        val currentUrls = _uiState.value.signedUrls
+        val now = Clock.System.now()
+        // Re-sign anything we've never signed, plus anything whose signed URL is
+        // about to expire — otherwise a URL signed >1h ago but not yet loaded by
+        // Coil would 403 with no recovery.
+        val pathsNeedingSign = paths.filter { path ->
+            val expiry = signedUrlExpiry[path]
+            path !in currentUrls || expiry == null || expiry - now <= 5.minutes
+        }
+        if (pathsNeedingSign.isEmpty()) return
 
         coroutineScope {
-            missingPaths.map { path ->
+            pathsNeedingSign.map { path ->
                 launch {
                     repo.signedUrl(path).onSuccess { url ->
+                        signedUrlExpiry[path] = now + 55.minutes
                         _uiState.update { state ->
                             state.copy(signedUrls = state.signedUrls + (path to url))
                         }

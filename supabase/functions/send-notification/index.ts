@@ -14,6 +14,10 @@
 //   SUPABASE_SERVICE_ROLE_KEY   (service role — bypasses RLS for token lookup)
 //   FCM_PROJECT_ID
 //   FCM_SERVICE_ACCOUNT         (JSON service account key, as a string)
+//   WEBHOOK_SECRET              (shared secret; if set, each request must send a
+//                                matching "x-webhook-secret" header — add it to
+//                                every Supabase Database Webhook. If unset, the
+//                                endpoint is unauthenticated.)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -95,11 +99,19 @@ async function getAccessToken(): Promise<string> {
   return json.access_token;
 }
 
-async function sendFcm(token: string, title: string, body: string, channelId: string) {
+// Sends a push. Returns true if the token is dead (unregistered/invalid) and
+// should be nulled out by the caller; false otherwise.
+async function sendFcm(
+  token: string,
+  title: string,
+  body: string,
+  channelId: string,
+  route: string,
+): Promise<boolean> {
   const projectId = Deno.env.get("FCM_PROJECT_ID")!;
   const accessToken = await getAccessToken();
 
-  await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -110,10 +122,23 @@ async function sendFcm(token: string, title: string, body: string, channelId: st
         token,
         notification: { title, body },
         android: { notification: { channel_id: channelId } },
-        data: { channel_id: channelId },
+        data: { channel_id: channelId, route },
       },
     }),
   });
+
+  if (res.ok) return false;
+
+  const text = await res.text();
+  // 404 / UNREGISTERED / INVALID_ARGUMENT means the token is dead
+  // (app uninstalled or token rotated) and should be discarded.
+  if (res.status === 404 || text.includes("UNREGISTERED") || text.includes("INVALID_ARGUMENT")) {
+    return true;
+  }
+  // Other failures: log, but don't throw — returning 200 avoids pointless
+  // webhook retries.
+  console.error(`FCM send failed: ${res.status} ${text}`);
+  return false;
 }
 
 async function nameOf(userId: string): Promise<string> {
@@ -157,10 +182,27 @@ async function otherMember(partnershipId: string, userId: string): Promise<strin
   return data.user_a_id === userId ? (data.user_b_id as string) : (data.user_a_id as string);
 }
 
+// Null out a token that FCM reported as dead.
+async function clearToken(token: string) {
+  await supabase.from("profiles").update({ fcm_token: null }).eq("fcm_token", token);
+}
+
 Deno.serve(async (req) => {
   try {
+    // Webhook authentication: if WEBHOOK_SECRET is set, require a matching
+    // "x-webhook-secret" header before doing any work. Without this, anyone who
+    // learns the public URL could POST a forged payload and spoof pushes.
+    const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
+    if (webhookSecret) {
+      if (req.headers.get("x-webhook-secret") !== webhookSecret) {
+        return new Response("unauthorized", { status: 401 });
+      }
+    } else {
+      console.warn("WEBHOOK_SECRET is unset — this endpoint is unauthenticated.");
+    }
+
     const payload = (await req.json()) as WebhookPayload;
-    const { table, type, record } = payload;
+    const { table, type, record, old_record } = payload;
 
     if (table === "signals" && type === "INSERT") {
       const receiver = record.receiver_id as string;
@@ -170,7 +212,7 @@ Deno.serve(async (req) => {
       const text = record.type === "custom"
         ? (record.custom_text as string)
         : (SIGNAL_LABELS[record.type as string] ?? "sent you a signal");
-      await sendFcm(token, name, text, "signals");
+      if (await sendFcm(token, name, text, "signals", "today")) await clearToken(token);
     } else if (table === "whiteboard_items" && type === "INSERT") {
       // Notify the *other* member of the partnership, not the author.
       const author = record.author_id as string;
@@ -182,8 +224,13 @@ Deno.serve(async (req) => {
       const body = record.parent_id
         ? "replied to a post"
         : "added something to the whiteboard";
-      await sendFcm(token, name, body, "whiteboard");
+      if (await sendFcm(token, name, body, "whiteboard", "whiteboard")) await clearToken(token);
     } else if (table === "status" && type === "UPDATE") {
+      // Only push on a genuine activity transition. Note-only edits and
+      // same-activity re-affirms would read as surveillance.
+      if ((old_record?.activity) === record.activity) {
+        return new Response("no change", { status: 200 });
+      }
       const owner = record.user_id as string;
       const partner = await partnerOf(owner);
       if (!partner) return new Response("no partner", { status: 200 });
@@ -191,7 +238,7 @@ Deno.serve(async (req) => {
       if (!token) return new Response("no token", { status: 200 });
       const name = await nameOf(owner);
       const label = ACTIVITY_LABELS[record.activity as string] ?? "their status";
-      await sendFcm(token, name, `is now ${label}`, "status");
+      if (await sendFcm(token, name, `is now ${label}`, "status", "today")) await clearToken(token);
     }
 
     return new Response("ok", { status: 200 });

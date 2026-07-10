@@ -84,6 +84,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -139,9 +140,9 @@ fun WhiteboardScreen(
     var activeReplyId by remember { mutableStateOf<String?>(null) }
     var replyText by remember { mutableStateOf("") }
 
-    DisposableEffect(viewModel) {
+    LifecycleStartEffect(viewModel) {
         viewModel.startPolling()
-        onDispose { viewModel.stopPolling() }
+        onStopOrDispose { viewModel.stopPolling() }
     }
 
     LaunchedEffect(uiState.error) {
